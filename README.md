@@ -8,18 +8,29 @@ A Windows desktop wallpaper manager with automatic scheduling, Unsplash fetching
 
 ---
 
-## Download
+## Quick Start
 
-**Pre-built executable (Windows 10/11, no Python required)**
+**Download the pre-built Windows executable** (no Python required)
 
-→ [Download Autowall.exe from the latest release](https://github.com/Ailurophile47/Autowall/releases/latest)
+→ [**Download Autowall.exe** from Releases](https://github.com/Ailurophile47/Autowall/releases/latest)
 
-1. Download `Autowall.exe` from the Releases page.
-2. Place it anywhere (e.g. `C:\Programs\Autowall\`).
-3. Run it — folders are created automatically on first launch.
-4. Open Settings (⚙) and add your [Unsplash API key](https://unsplash.com/developers).
+### Setup (3 steps)
 
-No installation needed. To auto-start with Windows, enable the option in Settings.
+1. **Download** `Autowall.exe` from the latest release page
+2. **Run it** — folders (`Inbox/`, `Favorites/`, `config/`) are created automatically
+3. **Add your key** — Open Settings (⚙ icon) and paste your [Unsplash API Access Key](https://unsplash.com/developers)
+
+**That's it!** No installation, no Python required. To auto-start with Windows, enable "Start automatically with Windows" in Settings.
+
+---
+
+## Requirements
+
+- **Windows 10 or 11**
+- **Internet connection** (for Unsplash fetching)
+- **Unsplash API Access Key** — Get a free one at [unsplash.com/developers](https://unsplash.com/developers)
+
+For the exe version: nothing else needed.
 
 ---
 
@@ -36,6 +47,84 @@ No installation needed. To auto-start with Windows, enable the option in Setting
 - **Scheduled time support** — optionally set an exact HH:MM time (24-hr) for the daily wallpaper change
 - **Autostart with Windows** — optional registry entry so Autowall launches at login
 - **Close to tray** — closing the window keeps the app running; only the tray Exit button fully quits
+
+---
+
+## Running from Source
+
+If you prefer to run the app directly from Python (developer mode):
+
+### Requirements
+- Python 3.9 or later
+- Unsplash API Access Key
+
+### Installation
+
+1. **Clone the repository**
+
+   ```powershell
+   git clone https://github.com/Ailurophile47/Autowall.git
+   cd Autowall
+   ```
+
+2. **Install dependencies**
+
+   ```powershell
+   py -m pip install requests pillow pystray
+   ```
+
+3. **Run the app**
+
+   ```powershell
+   py main.py
+   ```
+
+4. **Add your Unsplash API Key**
+
+   Open Settings (⚙ icon) and paste your key. It's stored in `config/config.json` (git-ignored).
+
+---
+
+## Building the Exe Yourself
+
+To create your own `dist/Autowall.exe`:
+
+### Requirements
+- Python 3.9 or later
+- PyInstaller and Pillow
+
+### Build Steps
+
+1. **Install build tools**
+
+   ```powershell
+   py -m pip install pyinstaller pillow
+   ```
+
+2. **Ensure your logo is ready**
+
+   Place your `assets/logo.png` (recommended: 512×512 or larger).
+
+3. **Run the build script**
+
+   ```powershell
+   py build_exe.py
+   ```
+
+   This converts `logo.png` → `assets/logo.ico` and packages the app via PyInstaller.
+
+4. **Find your exe**
+
+   ```
+   dist/Autowall.exe
+   ```
+
+   This is fully self-contained — copy it anywhere and run.
+
+5. **Distribute or keep locally**
+
+   - **Share** — Upload to GitHub Releases or share the exe file
+   - **Keep local** — Run directly or schedule in Task Scheduler
 
 ---
 
@@ -57,77 +146,11 @@ Autowall/
 │   ├── settings.py          # Settings window (interval, schedule, categories, API key)
 │   └── tray.py              # System tray icon and menu (pystray)
 ├── config/
-│   └── config.json          # User settings — excluded from git (contains API key)
-├── Inbox/                   # Downloaded wallpapers — excluded from git
-├── Favorites/               # Favorited wallpapers — excluded from git
-└── metadata.json            # Image state tracking — excluded from git
+│   └── config.json          # User settings (git-ignored, contains API key)
+├── Inbox/                   # Downloaded wallpapers (git-ignored)
+├── Favorites/               # Favorited wallpapers (git-ignored)
+└── metadata.json            # Image state tracking (git-ignored)
 ```
-
----
-
-## Requirements
-
-- Windows 10 or 11
-- Python 3.9+
-- Internet connection (for Unsplash fetching)
-- A free [Unsplash Developer](https://unsplash.com/developers) Access Key
-
-### Python dependencies
-
-```powershell
-py -m pip install requests pillow pystray
-```
-
----
-
-## Setup (run from source)
-
-1. **Clone the repository**
-
-   ```powershell
-   git clone https://github.com/Ailurophile47/Autowall.git
-   cd Autowall
-   ```
-
-2. **Install dependencies**
-
-   ```powershell
-   py -m pip install requests pillow pystray
-   ```
-
-3. **Run**
-
-   ```powershell
-   py main.py
-   ```
-
-   On first launch, Autowall creates the `config/`, `Inbox/`, and `Favorites/` folders automatically and fetches an initial batch of wallpapers.
-
-4. **Add your Unsplash API key**
-
-   Open the Settings window (⚙ button or tray → Settings), paste your Unsplash Access Key, and click **Save Settings**. The key is stored in `config/config.json` which is excluded from version control.
-
----
-
-## Building the exe yourself
-
-Requires Python 3.9+, PyInstaller, and Pillow.
-
-```powershell
-py -m pip install pyinstaller pillow
-```
-
-1. Save the app logo to `assets/logo.png`.
-2. Run the build script:
-
-   ```powershell
-   py build_exe.py
-   ```
-
-   This converts `logo.png` → `assets/logo.ico` (multi-size) and calls PyInstaller.  
-   The finished executable is written to `dist/Autowall.exe`.
-
-3. Distribute `dist/Autowall.exe` — it is fully self-contained.
 
 ---
 
