@@ -1,0 +1,29 @@
+# ── Sensitive config (contains Unsplash API key) ──────────────────────────────
+config/config.json
+
+# ── Local state / downloaded images ───────────────────────────────────────────
+metadata.json
+Inbox/
+Favorites/
+
+# ── Python cache ───────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+
+# ── Virtual environments ───────────────────────────────────────────────────────
+.venv/
+venv/
+env/
+
+# ── PyInstaller build artifacts ───────────────────────────────────────────────
+dist/
+build/
+*.spec
+
+# ── OS / editor noise ─────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+*.idea/
