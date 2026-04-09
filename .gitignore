@@ -21,6 +21,9 @@ dist/
 build/
 *.spec
 
+# ── Generated icon (built from logo.png by build_exe.py) ──────────────────────
+assets/logo.ico
+
 # ── OS / editor noise ─────────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db

@@ -4,6 +4,21 @@ A Windows desktop wallpaper manager with automatic scheduling, Unsplash fetching
 
 ---
 
+## Download
+
+**Pre-built executable (Windows 10/11, no Python required)**
+
+→ [Download Autowall.exe from the latest release](https://github.com/Ailurophile47/Autowall/releases/latest)
+
+1. Download `Autowall.exe` from the Releases page.
+2. Place it anywhere (e.g. `C:\Programs\Autowall\`).
+3. Run it — folders are created automatically on first launch.
+4. Open Settings (⚙) and add your [Unsplash API key](https://unsplash.com/developers).
+
+No installation needed. To auto-start with Windows, enable the option in Settings.
+
+---
+
 ## Features
 
 - **Auto wallpaper rotation** — changes wallpaper on a set interval (hourly, 6 h, 12 h, daily) or at a fixed time of day
@@ -58,7 +73,7 @@ py -m pip install requests pillow pystray
 
 ---
 
-## Setup
+## Setup (run from source)
 
 1. **Clone the repository**
 
@@ -84,6 +99,28 @@ py -m pip install requests pillow pystray
 4. **Add your Unsplash API key**
 
    Open the Settings window (⚙ button or tray → Settings), paste your Unsplash Access Key, and click **Save Settings**. The key is stored in `config/config.json` which is excluded from version control.
+
+---
+
+## Building the exe yourself
+
+Requires Python 3.9+, PyInstaller, and Pillow.
+
+```powershell
+py -m pip install pyinstaller pillow
+```
+
+1. Save the app logo to `assets/logo.png`.
+2. Run the build script:
+
+   ```powershell
+   py build_exe.py
+   ```
+
+   This converts `logo.png` → `assets/logo.ico` (multi-size) and calls PyInstaller.  
+   The finished executable is written to `dist/Autowall.exe`.
+
+3. Distribute `dist/Autowall.exe` — it is fully self-contained.
 
 ---
 
