@@ -65,7 +65,17 @@ def run_tray(state):
 
     def on_change_now(icon, item):
         cfg = manager.load_config()
-        wallpaper.set_next(cfg)
+        changed = wallpaper.set_next(cfg)
+        if changed:
+            try:
+                icon.notify("New wallpaper applied", "Autowall")
+            except Exception:
+                pass
+
+    def on_skip_wallpaper(icon, item):
+        """Change wallpaper without advancing the rotation cycle."""
+        cfg = manager.load_config()
+        wallpaper.skip_to_next(cfg)
 
     def on_fetch_now(icon, item):
         def _fetch():
@@ -126,6 +136,7 @@ def run_tray(state):
         pystray.MenuItem("Show Window",           on_show_window, default=True),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("Change Wallpaper Now",  on_change_now),
+        pystray.MenuItem("Skip Wallpaper",        on_skip_wallpaper),
         pystray.MenuItem("Fetch New Wallpapers",  on_fetch_now),
         pystray.MenuItem("Open Viewer",           on_open_viewer),
         pystray.Menu.SEPARATOR,

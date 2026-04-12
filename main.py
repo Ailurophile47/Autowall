@@ -39,6 +39,7 @@ def _background_loop(state):
             cfg      = manager.load_config()
             now      = datetime.now()
             interval = timedelta(hours=cfg.get("interval_hours", 24))
+            bias_ratio = manager.get_preference_bias_ratio(cfg)
 
             # ── Change wallpaper on interval or scheduled time ─────────────────
             last_change   = state.get("last_change")
@@ -67,18 +68,30 @@ def _background_loop(state):
                             root.after(0, lambda: _refresh_app(state))
                         except Exception:
                             pass
+                    # Tray notification
+                    icon = state.get("icon")
+                    if icon:
+                        try:
+                            icon.notify("New wallpaper applied", "Autowall")
+                        except Exception:
+                            pass
 
             # ── Fetch new wallpapers once per 24 h ────────────────────────────
             last_fetch = state.get("last_fetch")
             if last_fetch is None or (now - last_fetch) >= timedelta(hours=24):
                 min_w = manager.res_to_min_width(cfg.get("min_resolution", "1080p"))
+                meta_for_prefs = manager.load_meta()
+                prefs = meta_for_prefs.get("__preferences__", {})
                 downloader.fetch(
                     count=5,
                     queries=cfg.get("categories", ["nature"]),
                     unsplash_key=cfg.get("unsplash_key", ""),
                     min_width=min_w,
+                    prefs=prefs,
+                    bias_ratio=bias_ratio,
                 )
-                manager.register_all_inbox()
+                cat_hints = downloader.get_and_clear_fetched_categories()
+                manager.register_all_inbox(category_hints=cat_hints)
                 state["last_fetch"] = now
 
         except Exception:
@@ -109,13 +122,16 @@ def _first_run_fetch():
 
         cfg   = manager.load_config()
         min_w = manager.res_to_min_width(cfg.get("min_resolution", "1080p"))
+        bias_ratio = manager.get_preference_bias_ratio(cfg)
         downloader.fetch(
             count=5,
             queries=cfg.get("categories", ["nature"]),
             unsplash_key=cfg.get("unsplash_key", ""),
             min_width=min_w,
+            bias_ratio=bias_ratio,
         )
-        manager.register_all_inbox()
+        cat_hints = downloader.get_and_clear_fetched_categories()
+        manager.register_all_inbox(category_hints=cat_hints)
     except Exception:
         pass
 
