@@ -10,11 +10,13 @@ import subprocess
 import sys
 import threading
 import tkinter as tk
+from tkinter import filedialog
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from PIL import Image, ImageDraw, ImageTk
 
 from core import manager, wallpaper, downloader
+from core.manager import CACHE_DIR, update_preference
 
 # ── Palette ───────────────────────────────────────────────────────────────────
 BG        = "#0e1117"
@@ -216,6 +218,7 @@ class WallpaperApp:
         self._build_library()
 
         root.after_idle(self.refresh)
+        root.after(200, self._check_first_run)
 
     # ── Top bar ───────────────────────────────────────────────────────────────
 
@@ -242,6 +245,8 @@ class WallpaperApp:
                  self._fetch_new, accent=True).pack(side="right")
         _IconBtn(right, "◱", "Open Reviewer",
                  lambda: _open_subprocess("--viewer")).pack(side="right")
+        _IconBtn(right, "⊕", "Import wallpapers from disk",
+                 self._import_wallpapers).pack(side="right")
 
         # Center: tabs
         center = tk.Frame(bar, bg=BG)
@@ -300,6 +305,7 @@ class WallpaperApp:
         self._hero_img_cache = None
         self._hero_name_text = ""
         self._hero_res_text  = ""
+        self._hero_cat_text  = ""
 
     def _update_hero(self, meta):
         """Pick the most recent wallpaper to display in the hero card."""
@@ -324,7 +330,7 @@ class WallpaperApp:
             self._hero_cv.create_text(
                 self._hero_cv.winfo_width() // 2 or 400,
                 HERO_H // 2,
-                text="No wallpapers yet — click ⟳ to fetch",
+                text="No wallpapers yet  —  click ⟳ to fetch or ⊕ to import",
                 fill=FG_DIM, font=("Segoe UI", 11),
             )
             return
@@ -333,11 +339,17 @@ class WallpaperApp:
         liked = meta[h].get("liked", False)
         self._hero_like_btn.config(text="♥  Unlike" if liked else "♥  Like")
         self._hero_name_text = os.path.basename(path)
+        # Determine source label
+        basename = os.path.basename(path)
+        source = "Unsplash" if basename.startswith("unsplash_") else "Custom"
+        category = meta[h].get("category", "general").capitalize()
         try:
             with Image.open(path) as img:
-                self._hero_res_text = f"{img.width} × {img.height}"
+                res = f"{img.width}×{img.height}"
         except Exception:
-            self._hero_res_text = ""
+            res = ""
+        self._hero_res_text = res
+        self._hero_cat_text = f"{category}  •  {res}  •  {source}" if res else f"{category}  •  {source}"
 
         # Load hero image in background
         threading.Thread(target=self._load_hero_img, args=(path,), daemon=True).start()
@@ -387,12 +399,15 @@ class WallpaperApp:
         cv.create_text(53, 18, text="NOW ACTIVE", fill=ACC,
                        font=("Segoe UI", 7, "bold"))
 
-        # Filename + resolution drawn as canvas text (no alpha issues)
+        # Filename + category/resolution drawn as canvas text (no alpha issues)
         pad = 12
         if self._hero_name_text:
             cv.create_text(pad, ch - 48, text=self._hero_name_text,
                            anchor="sw", fill=FG, font=("Segoe UI", 11, "bold"))
-        if self._hero_res_text:
+        if self._hero_cat_text:
+            cv.create_text(pad, ch - 30, text=self._hero_cat_text,
+                           anchor="sw", fill=FG_DIM, font=("Segoe UI", 9))
+        elif self._hero_res_text:
             cv.create_text(pad, ch - 30, text=self._hero_res_text,
                            anchor="sw", fill=FG_DIM, font=("Segoe UI", 9))
 
@@ -510,8 +525,10 @@ class WallpaperApp:
         self._photos.clear()
 
         if not items:
-            tk.Label(self._grid, text="Nothing here yet.",
-                     font=("Segoe UI", 11), fg=FG_DIM, bg=BG).pack(pady=40)
+            tk.Label(self._grid,
+                     text="No wallpapers yet  😴\nClick  ⟳  to fetch or  ⊕  to import from disk",
+                     font=("Segoe UI", 11), fg=FG_DIM, bg=BG,
+                     justify="center").pack(pady=40)
             return
 
         self._cv.update_idletasks()
@@ -548,9 +565,31 @@ class WallpaperApp:
             path = info.get("path", "")
             if not os.path.exists(path):
                 return h, None
+
+            # ── Thumbnail cache ───────────────────────────────────────────────
+            cache_path = os.path.join(CACHE_DIR, f"{h}_thumb.jpg")
+            if os.path.exists(cache_path):
+                try:
+                    with Image.open(cache_path) as cached:
+                        img = cached.convert("RGB")
+                        img.thumbnail((tw, th), Image.LANCZOS)
+                        bg = Image.new("RGB", (tw, th), (22, 27, 34))
+                        bg.paste(img, ((tw - img.width) // 2, (th - img.height) // 2))
+                        return h, bg
+                except Exception:
+                    pass  # cache miss — fall through to full load
+
             try:
                 with Image.open(path) as img:
                     img = img.convert("RGB")
+                    # Persist a fixed-size thumbnail for next time
+                    try:
+                        cache_copy = img.copy()
+                        cache_copy.thumbnail((400, 225), Image.LANCZOS)
+                        os.makedirs(CACHE_DIR, exist_ok=True)
+                        cache_copy.save(cache_path, "JPEG", quality=80)
+                    except Exception:
+                        pass
                     img.thumbnail((tw, th), Image.LANCZOS)
                     bg = Image.new("RGB", (tw, th), (22, 27, 34))
                     bg.paste(img, ((tw - img.width) // 2, (th - img.height) // 2))
@@ -589,17 +628,30 @@ class WallpaperApp:
         self._count_lbl.config(text="Fetching…", fg=ACC)
 
         def _run():
-            cfg   = manager.load_config()
-            min_w = manager.res_to_min_width(cfg.get("min_resolution", "1080p"))
+            cfg      = manager.load_config()
+            min_w    = manager.res_to_min_width(cfg.get("min_resolution", "1080p"))
+            meta_now = manager.load_meta()
+            prefs    = meta_now.get("__preferences__", {})
+            bias_ratio = manager.get_preference_bias_ratio(cfg)
             count = downloader.fetch(
                 count=5,
                 queries=cfg.get("categories", ["nature"]),
                 unsplash_key=cfg.get("unsplash_key", ""),
                 min_width=min_w,
+                prefs=prefs,
+                bias_ratio=bias_ratio,
             )
-            manager.register_all_inbox()
+            cat_hints = downloader.get_and_clear_fetched_categories()
+            manager.register_all_inbox(category_hints=cat_hints)
             self._fetching = False
-            msg = (f"{count} fetched" if count > 0 else "Nothing new")
+
+            if count > 0:
+                msg = f"{count} fetched"
+            elif count == -1:
+                msg = "Offline — using saved wallpapers"
+            else:
+                msg = "Nothing new"
+
             self.root.after(0, lambda: self._count_lbl.config(text=msg, fg=ACC))
             self.root.after(0, self.refresh)
             self.root.after(3000, lambda: self._count_lbl.config(fg=FG_MUT))
@@ -609,7 +661,7 @@ class WallpaperApp:
                 try:
                     icon.notify(
                         f"{count} new wallpaper{'s' if count != 1 else ''} downloaded.",
-                        "Wallpaper App",
+                        "Autowall",
                     )
                 except Exception:
                     pass
@@ -636,40 +688,135 @@ class WallpaperApp:
                 self.root.after(2000, self.refresh)
 
         elif action == "like":
-            meta[file_hash]["liked"]    = not info.get("liked", False)
+            was_liked = info.get("liked", False)
+            meta[file_hash]["liked"]    = not was_liked
             meta[file_hash]["reviewed"] = True
+            category = info.get("category", "general")
+            update_preference(meta, category, +2 if not was_liked else -2)
             manager.save_meta(meta)
             self.refresh()
 
         elif action == "favorite":
             path = info.get("path", "")
+            category = info.get("category", "general")
+            cfg = manager.load_config()
             if info.get("favorite"):
+                if not os.path.exists(path):
+                    return
                 new_path = manager.get_unique_path(manager.INBOX, os.path.basename(path))
-                if os.path.exists(path):
-                    shutil.move(path, new_path)
+                shutil.move(path, new_path)
                 meta[file_hash].update({"path": new_path, "favorite": False})
+                wallpaper.refresh_current_wallpaper(cfg, file_hash, meta)
             else:
-                if os.path.exists(path):
-                    new_path = manager.get_unique_path(manager.FAV, os.path.basename(path))
-                    shutil.move(path, new_path)
-                    meta[file_hash].update({
-                        "path": new_path, "favorite": True,
-                        "liked": True,    "reviewed": True,
-                    })
+                if not os.path.exists(path):
+                    return
+                new_path = manager.get_unique_path(manager.FAV, os.path.basename(path))
+                shutil.move(path, new_path)
+                meta[file_hash].update({
+                    "path": new_path, "favorite": True,
+                    "liked": True,    "reviewed": True,
+                })
+                wallpaper.refresh_current_wallpaper(cfg, file_hash, meta)
+                update_preference(meta, category, +5)
             manager.save_meta(meta)
             self.refresh()
 
         elif action == "delete":
             path = info.get("path", "")
+            cfg = manager.load_config()
+            wallpaper.switch_away_from_current(cfg, file_hash, meta)
             if os.path.exists(path):
                 try:
                     os.remove(path)
                 except OSError:
                     pass
+            manager.remove_from_recent(meta, file_hash)
             del meta[file_hash]
             manager.save_meta(meta)
             if self._hero_hash == file_hash:
                 self._hero_hash = None
+            self.refresh()
+
+    # ── First-run welcome ─────────────────────────────────────────────────────
+
+    def _check_first_run(self):
+        """Show a welcome dialog if no Unsplash API key has been configured."""
+        cfg = manager.load_config()
+        key = cfg.get("unsplash_key", "").strip()
+        if key and key != "YOUR_ACCESS_KEY_HERE":
+            return  # already configured
+
+        dlg = tk.Toplevel(self.root)
+        dlg.title("Welcome to Autowall")
+        dlg.configure(bg=BG)
+        dlg.resizable(False, False)
+        dlg.grab_set()
+
+        w, h = 420, 220
+        sx, sy = dlg.winfo_screenwidth(), dlg.winfo_screenheight()
+        dlg.geometry(f"{w}x{h}+{(sx - w)//2}+{(sy - h)//2}")
+
+        tk.Label(dlg, text="Welcome to Autowall",
+                 font=("Segoe UI", 14, "bold"), fg=FG, bg=BG).pack(pady=(22, 4))
+        tk.Label(dlg, text="Enter your Unsplash API key to get started",
+                 font=("Segoe UI", 9), fg=FG_DIM, bg=BG).pack()
+
+        key_var = tk.StringVar()
+        entry = tk.Entry(dlg, textvariable=key_var, width=46,
+                         bg=BG2, fg=FG, insertbackground=FG, relief="flat",
+                         font=("Consolas", 9))
+        entry.pack(pady=(14, 0), ipady=6, padx=24)
+        entry.focus_set()
+
+        status_lbl = tk.Label(dlg, text="", fg=ACC, bg=BG, font=("Segoe UI", 9))
+        status_lbl.pack(pady=(4, 0))
+
+        def _save():
+            k = key_var.get().strip()
+            if not k:
+                status_lbl.config(text="Please enter a key.", fg=RED)
+                return
+            cfg["unsplash_key"] = k
+            manager.save_config(cfg)
+            dlg.destroy()
+            # Trigger an immediate fetch with the new key
+            self._fetch_new()
+
+        tk.Button(dlg, text="Save & Continue",
+                  bg=ACC, fg=BG, activebackground="#52b380",
+                  font=("Segoe UI", 10, "bold"), relief="flat",
+                  cursor="hand2", padx=16, pady=6,
+                  command=_save).pack(pady=(10, 0))
+
+        dlg.bind("<Return>", lambda e: _save())
+
+    # ── Import custom wallpapers ───────────────────────────────────────────────
+
+    def _import_wallpapers(self):
+        """Open a file dialog and copy chosen images into Inbox."""
+        paths = filedialog.askopenfilenames(
+            title="Import wallpapers",
+            filetypes=[("Image files", "*.jpg *.jpeg *.png"), ("All files", "*.*")],
+        )
+        if not paths:
+            return
+
+        imported = 0
+        for src in paths:
+            try:
+                # Basic validation: PIL must be able to open it
+                with Image.open(src) as img:
+                    img.verify()
+                dst = manager.get_unique_path(manager.INBOX, os.path.basename(src))
+                shutil.copy2(src, dst)
+                manager.register_file(dst, category="custom")
+                imported += 1
+            except Exception:
+                pass
+
+        if imported:
+            self._count_lbl.config(text=f"{imported} imported", fg=ACC)
+            self.root.after(2500, lambda: self._count_lbl.config(fg=FG_MUT))
             self.refresh()
 
     # ── Shutdown ──────────────────────────────────────────────────────────────

@@ -13,9 +13,9 @@ from PIL import Image, ImageTk
 from core.manager import (
     INBOX, FAV,
     load_meta, save_meta, get_unique_path, register_file,
-    load_config,
+    load_config, update_preference, remove_from_recent,
 )
-from core import downloader
+from core import downloader, wallpaper
 
 PREVIEW_MAX = (940, 540)
 
@@ -147,8 +147,10 @@ class _App:
         h = self.current_hash()
         if h is None:
             return
+        category = self.meta[h].get("category", "general")
         self.meta[h]["liked"]    = True
         self.meta[h]["reviewed"] = True
+        update_preference(self.meta, category, +2)
         save_meta(self.meta)
         self.flash("♥  Liked", "#6fcf97")
         self.index += 1
@@ -163,9 +165,12 @@ class _App:
             self.index += 1
             self.show_image()
             return
+        category = self.meta[h].get("category", "general")
         new_path = get_unique_path(FAV, os.path.basename(path))
         shutil.move(path, new_path)
         self.meta[h].update({"path": new_path, "favorite": True, "liked": True, "reviewed": True})
+        wallpaper.refresh_current_wallpaper(load_config(), h, self.meta)
+        update_preference(self.meta, category, +5)
         save_meta(self.meta)
         self.flash("★  Favorited", "#f2c94c")
         self.index += 1
@@ -186,11 +191,16 @@ class _App:
         if h is None:
             return
         path = self.meta[h]["path"]
+        # Score dislike BEFORE deleting the entry so category is still accessible
+        category = self.meta[h].get("category", "general")
+        update_preference(self.meta, category, -3)
+        wallpaper.switch_away_from_current(load_config(), h, self.meta)
         if os.path.exists(path):
             try:
                 os.remove(path)
             except OSError:
                 pass
+        remove_from_recent(self.meta, h)
         del self.meta[h]
         save_meta(self.meta)
         self.files.pop(self.index)
@@ -208,6 +218,7 @@ class _App:
             queries=cfg.get("categories", ["nature"]),
             unsplash_key=cfg.get("unsplash_key", ""),
             min_width=1920,
+            bias_ratio=max(0.0, min(1.0, cfg.get("preference_bias_percent", 70) / 100.0)),
         )
         for f in os.listdir(INBOX):
             fp = os.path.join(INBOX, f)

@@ -11,6 +11,20 @@ from core.manager import INBOX, get_unique_path
 
 MIN_HEIGHT = 1080
 
+# ── Per-fetch state (reset at the start of every fetch() call) ────────────────
+# Maps basename → query used, so callers can attach category to metadata.
+_fetched_categories: dict = {}
+# Set to True if any query attempt hit a network / HTTP error.
+_had_network_error: bool = False
+
+
+def get_and_clear_fetched_categories() -> dict:
+    """Return {filename: category} from the last fetch() call and clear it."""
+    global _fetched_categories
+    result = dict(_fetched_categories)
+    _fetched_categories.clear()
+    return result
+
 
 def _fetch_one_query(query, count, unsplash_key, min_width, existing_files, existing_ids):
     """
@@ -36,6 +50,8 @@ def _fetch_one_query(query, count, unsplash_key, min_width, existing_files, exis
         payload = resp.json()
         results = payload if isinstance(payload, list) else [payload]
     except requests.RequestException:
+        global _had_network_error
+        _had_network_error = True
         return 0
 
     downloaded = 0
@@ -73,6 +89,7 @@ def _fetch_one_query(query, count, unsplash_key, min_width, existing_files, exis
 
             existing_files.add(filename)
             existing_ids.add(img_id)
+            _fetched_categories[filename] = query
             downloaded += 1
 
         except (requests.RequestException, OSError):
@@ -82,18 +99,33 @@ def _fetch_one_query(query, count, unsplash_key, min_width, existing_files, exis
     return downloaded
 
 
-def fetch(count=5, queries=None, unsplash_key="", min_width=1920):
+def fetch(count=5, queries=None, unsplash_key="", min_width=1920, prefs=None, bias_ratio=0.7):
     """
     Download `count` wallpapers from Unsplash.
-    Tries queries in shuffled order until at least 1 image is downloaded
-    or all queries are exhausted (max 5 query attempts).
-    Returns the number of successfully downloaded images.
+
+    Query selection uses a configurable exploitation / exploration strategy:
+      - `bias_ratio` of the time: pick with preference weighting
+      - the rest of the time: pick a random query
+
+    prefs — optional dict of {query: score} from metadata["__preferences__"].
+            If None or empty, all queries are treated equally (cold start).
+
+    Returns:
+      int >= 0  — number of images downloaded
+      -1        — network / API error (no internet or key problem)
     """
+    global _fetched_categories, _had_network_error
+    _fetched_categories.clear()
+    _had_network_error = False
+
     if not unsplash_key or unsplash_key == "YOUR_ACCESS_KEY_HERE":
         return 0
 
     if not queries:
         queries = ["nature", "landscape"]
+
+    # Cold start: give every query an equal base weight
+    effective_prefs = prefs if prefs else {q: 1 for q in queries}
 
     existing_files = set(os.listdir(INBOX))
     existing_ids = {
@@ -102,16 +134,35 @@ def fetch(count=5, queries=None, unsplash_key="", min_width=1920):
         if f.startswith("unsplash_") and f.endswith(".jpg")
     }
 
-    shuffled = queries[:]
-    random.shuffle(shuffled)
-    max_attempts = min(5, len(shuffled))
+    # Build an ordered list of queries using weighted + exploration
+    remaining = list(queries)
+    ordered = []
+    max_attempts = min(5, len(remaining))
+    for _ in range(max_attempts):
+        if not remaining:
+            break
+        try:
+            if random.random() < max(0.0, min(1.0, bias_ratio)):
+                # Exploitation: weight by preferences (floor at 1)
+                weights = [max(effective_prefs.get(q, 1), 1) for q in remaining]
+                chosen = random.choices(remaining, weights=weights, k=1)[0]
+            else:
+                # Exploration: pick any query uniformly
+                chosen = random.choice(remaining)
+        except Exception:
+            chosen = random.choice(remaining)
+        ordered.append(chosen)
+        remaining.remove(chosen)
 
     downloaded = 0
-    for query in shuffled[:max_attempts]:
+    for query in ordered:
         downloaded += _fetch_one_query(
             query, count, unsplash_key, min_width, existing_files, existing_ids
         )
         if downloaded >= 1:
             break
+
+    if downloaded == 0 and _had_network_error:
+        return -1   # signals offline / API unreachable
 
     return downloaded

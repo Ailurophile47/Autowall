@@ -18,6 +18,8 @@ ACC    = "#6fcf97"
 
 APP_NAME = "Autowall"
 
+BIAS_PRESETS = [("Balanced", 50), ("Recommended", 70), ("Strong", 85), ("Maximum", 100)]
+
 ALL_CATEGORIES = [
     "nature", "dark", "minimal", "space", "cyberpunk", "landscape",
     "architecture", "travel", "cityscape", "astrophotography", "aesthetics",
@@ -180,6 +182,19 @@ class _Settings:
                            fg=FG, bg=BG, selectcolor=BG2, activebackground=BG,
                            activeforeground=FG, font=("Segoe UI", 10)).pack(anchor="w")
 
+        section("Recommendation Bias")
+        label("How strongly likes and dislikes should affect fetches and wallpaper rotation:")
+        self._bias_var = tk.IntVar(value=int(self.cfg.get("preference_bias_percent", 70)))
+        row = tk.Frame(frame, bg=BG)
+        row.pack(anchor="w", padx=30)
+        for text, value in BIAS_PRESETS:
+            tk.Radiobutton(
+                row, text=f"{text} ({value}/{100 - value})",
+                variable=self._bias_var, value=value,
+                fg=FG, bg=BG, selectcolor=BG2, activebackground=BG,
+                activeforeground=FG, font=("Segoe UI", 10),
+            ).pack(anchor="w")
+
         # ── Categories ─────────────────────────────────────────────────────────
         section("Categories")
         label("Select which themes to download from Unsplash:")
@@ -246,6 +261,7 @@ class _Settings:
     def _save(self):
         self.cfg["interval_hours"]  = self._interval_var.get()
         self.cfg["min_resolution"]  = self._res_var.get()
+        self.cfg["preference_bias_percent"] = self._bias_var.get()
         self.cfg["categories"]      = [c for c, v in self._cat_vars.items() if v.get()]
         self.cfg["favorites_only"]  = self._fav_var.get()
         self.cfg["unsplash_key"]    = self._key_var.get().strip()
