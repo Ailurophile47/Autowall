@@ -53,7 +53,7 @@ jobs:
 
       # ── 5. Build executables ───────────────────────────────────────────────────
       - name: Build Autowall.exe + updater.exe + SHA256SUMS.txt
-        run: python build_exe.py --skip-ico
+        run: python build_exe.py
 
       # ── 6. Create GitHub Release and upload assets ────────────────────────────
       - name: Create GitHub Release
