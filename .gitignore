@@ -5,6 +5,11 @@ config/config.json
 metadata.json
 Inbox/
 Favorites/
+cache/
+
+# ── Logs ───────────────────────────────────────────────────────────────────────
+logs/
+*.log
 
 # ── Python cache ───────────────────────────────────────────────────────────────
 __pycache__/

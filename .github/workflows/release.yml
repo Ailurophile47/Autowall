@@ -1,0 +1,66 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"   # triggers on v2.0.0, v2.1.0, etc.
+
+permissions:
+  contents: write  # needed to create GitHub Releases and upload assets
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      # ── 1. Checkout ────────────────────────────────────────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── 2. Set up Python ───────────────────────────────────────────────────────
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      # ── 3. Install dependencies ────────────────────────────────────────────────
+      - name: Install dependencies
+        run: pip install pyinstaller pillow pystray requests
+
+      # ── 4. Verify version tag matches version.py ──────────────────────────────
+      - name: Check version consistency
+        shell: python
+        run: |
+          import sys, re
+          tag = "${{ github.ref_name }}"          # e.g. v2.1.0
+          tag_ver = tag.lstrip("v")
+          with open("version.py") as f:
+              src = f.read()
+          m = re.search(r'__version__\s*=\s*["\']([^"\']+)["\']', src)
+          if not m:
+              print("ERROR: __version__ not found in version.py")
+              sys.exit(1)
+          code_ver = m.group(1)
+          if code_ver != tag_ver:
+              print(f"ERROR: Tag is {tag} but version.py says {code_ver}")
+              print("Bump __version__ in version.py to match the tag before pushing.")
+              sys.exit(1)
+          print(f"OK — version {code_ver} matches tag {tag}")
+
+      # ── 5. Build executables ───────────────────────────────────────────────────
+      - name: Build Autowall.exe + updater.exe + SHA256SUMS.txt
+        run: python build_exe.py --skip-ico
+
+      # ── 6. Create GitHub Release and upload assets ────────────────────────────
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Autowall ${{ github.ref_name }}
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}  # v2.1.0-beta → pre-release
+          generate_release_notes: true
+          files: |
+            dist/Autowall.exe
+            dist/SHA256SUMS.txt
