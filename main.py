@@ -1,5 +1,5 @@
 """
-main.py — Entry point for Wallpaper App.
+main.py — Entry point for Autowall.
 
 Modes (argv flags):
   --viewer    Open the image review window and exit
