@@ -3,11 +3,14 @@ ui/tray.py
 System tray icon + menu using pystray.
 All non-GUI tray actions run directly; GUI windows are spawned as subprocesses.
 """
+import logging
 import os
 import sys
 import subprocess
 
 import threading
+
+log = logging.getLogger(__name__)
 
 import pystray
 from PIL import Image, ImageDraw
@@ -115,6 +118,21 @@ def run_tray(state):
     def on_open_settings(icon, item):
         _open_subprocess("--settings")
 
+    def on_check_update(icon, item):
+        checker = state.get("update_checker")
+        if checker is None:
+            return
+        if checker.status in ("checking", "downloading"):
+            return  # already in progress
+        threading.Thread(target=checker._check_cycle, daemon=True).start()
+
+    def on_install_update(icon, item):
+        checker = state.get("update_checker")
+        if checker and checker.status == "ready":
+            threading.Thread(target=checker.apply_update, daemon=True).start()
+        else:
+            log.warning("Install Update clicked but no update is ready.")
+
     def on_show_window(icon, item):
         root = state.get("root")
         if root:
@@ -151,8 +169,20 @@ def run_tray(state):
             checked=lambda item: manager.load_config().get("favorites_only", False),
         ),
         pystray.Menu.SEPARATOR,
-        pystray.MenuItem("Settings", on_open_settings),
-        pystray.MenuItem("Exit",     on_exit),
+        pystray.MenuItem("Settings",          on_open_settings),
+        pystray.Menu.SEPARATOR,
+        pystray.MenuItem("Check for Updates", on_check_update),
+        pystray.MenuItem(
+            "Install Update & Restart",
+            on_install_update,
+            # Only visible when a verified update is downloaded and ready
+            visible=lambda item: (
+                state.get("update_checker") is not None
+                and state["update_checker"].status == "ready"
+            ),
+        ),
+        pystray.Menu.SEPARATOR,
+        pystray.MenuItem("Exit",              on_exit),
     )
 
     icon = pystray.Icon(

@@ -11,6 +11,7 @@ and fetches new images once per day.
 The tray icon runs on a daemon thread alongside the main window.
 The main window (taskbar-visible) runs on the main thread.
 """
+import logging
 import sys
 import os
 import threading
@@ -21,7 +22,22 @@ _ROOT = os.path.dirname(os.path.abspath(__file__))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
+from version import __version__, GITHUB_REPO
 from core import manager, downloader, wallpaper
+
+
+def _setup_logging(log_dir: str):
+    """Configure file + stderr logging once at startup."""
+    os.makedirs(log_dir, exist_ok=True)
+    log_file = os.path.join(log_dir, "autowall.log")
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)-8s] %(name)s: %(message)s",
+        handlers=[
+            logging.FileHandler(log_file, encoding="utf-8", mode="a"),
+            logging.StreamHandler(),
+        ],
+    )
 
 
 # ── Background loop ────────────────────────────────────────────────────────────
@@ -151,21 +167,33 @@ def main():
         return
 
     # ── Full app mode ──────────────────────────────────────────────────────────
+
+    # Install to %LOCALAPPDATA%\Autowall\ on first run; no-op if already there.
+    # Must happen before manager is used (manager reads BASE_DIR = LOCALAPPDATA\Autowall).
+    from core.migration import ensure_installed, get_install_dir
+    ensure_installed(__version__)
+
+    # Logging goes to LOCALAPPDATA\Autowall\logs\ which ensure_installed created.
+    _setup_logging(os.path.join(get_install_dir(), "logs"))
+    _log = logging.getLogger(__name__)
+    _log.info("Autowall v%s starting.", __version__)
+
     manager.ensure_setup()
 
     # Fetch on first launch so the library shows images immediately
     _first_run_fetch()
 
     state = {
-        "paused":      False,
-        "last_change": None,
-        "last_fetch":  datetime.now(),   # already fetched above
+        "paused":               False,
+        "last_change":          None,
+        "last_fetch":           datetime.now(),   # already fetched above
         "stop":                 threading.Event(),
         "quitting":             False,
         "last_scheduled_date":  None,
-        "root":        None,   # set by run_app
-        "icon":        None,   # set by run_tray
-        "app":         None,   # set by run_app
+        "root":                 None,   # set by run_app
+        "icon":                 None,   # set by run_tray
+        "app":                  None,   # set by run_app
+        "update_checker":       None,   # set below
     }
 
     # Set first wallpaper immediately
@@ -182,6 +210,12 @@ def main():
     # Start tray icon on a daemon thread (non-blocking for main thread)
     from ui.tray import run_tray
     threading.Thread(target=run_tray, args=(state,), daemon=True).start()
+
+    # Start background update checker (polls GitHub every 4 h; first check after 90 s)
+    from core.updater import UpdateChecker
+    checker = UpdateChecker(state=state, repo=GITHUB_REPO, current_version=__version__)
+    state["update_checker"] = checker
+    checker.start()
 
     # Run main window on main thread (blocks until window is closed)
     from ui.app_window import run_app

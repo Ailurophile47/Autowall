@@ -10,7 +10,12 @@ from datetime import datetime, timedelta
 
 # ── Paths ──────────────────────────────────────────────────────────────────────
 if getattr(sys, "frozen", False):
-    BASE_DIR = os.path.dirname(sys.executable)
+    # Managed install: user data lives in %LOCALAPPDATA%\Autowall\
+    # migration.ensure_installed() guarantees this directory exists before
+    # any code that imports manager runs.
+    BASE_DIR = os.path.join(
+        os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "Autowall"
+    )
 else:
     BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
