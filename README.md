@@ -39,12 +39,15 @@ For the exe version: nothing else needed.
 - **Auto wallpaper rotation** — changes wallpaper on a set interval (hourly, 6 h, 12 h, daily) or at a fixed time of day
 - **Unsplash integration** — fetches high-resolution wallpapers by keyword category; guarantees at least one new image per fetch
 - **Dark dashboard GUI** — taskbar-visible app window with hero preview, 4-column library grid, tab switching (All / Favorites / Recent)
+- **Live library refresh** — the grid automatically detects external file additions or deletions and updates within 3 seconds, no manual refresh needed
+- **Sorted library grid** — Library shows recently-set wallpapers first, then all others newest-added first; Favorites shows newest-favorited first; Recent shows most recently set first
 - **System tray** — runs silently in the background; change wallpaper, fetch new ones, pause rotation, open viewer, or exit from the tray
 - **Image reviewer** — swipe-style review window to like, favorite, or discard images; includes the 5 most recent wallpapers alongside unreviewed ones
 - **Favorites system** — favorited images are moved to a dedicated folder and prioritized
 - **No-repeat cycle** — wallpapers rotate without repeating until the full pool is exhausted, then the cycle resets
 - **Minimum resolution filter** — download only 1080p, 2K, or 4K images (configurable)
 - **Scheduled time support** — optionally set an exact HH:MM time (24-hr) for the daily wallpaper change
+- **Custom app icon** — taskbar, title bar, and system tray all display your own logo (`assets/logo.ico` / `assets/logo.png`)
 - **Autostart with Windows** — optional registry entry so Autowall launches at login
 - **Close to tray** — closing the window keeps the app running; only the tray Exit button fully quits
 
@@ -220,9 +223,10 @@ Every 60 seconds the loop checks:
 
 ### Main window
 
-- **Top bar** — logo, tab switcher (Library / Favorites / Recent), fetch button (⟳), reviewer shortcut (◱), settings (⚙)
+- **Top bar** — logo, tab switcher (Library / Favorites / Recent), import button (⊕), fetch button (⟳), reviewer shortcut (◱), settings (⚙)
 - **Hero card** — large preview of the currently active wallpaper with Like, Fav, Set Now, and Delete actions
-- **Library grid** — 4-column thumbnail grid; left-click to set as wallpaper, right-click for full context menu
+- **Library grid** — 4-column thumbnail grid; left-click to set as wallpaper, right-click for full context menu (Like, Favorite, Delete)
+- Grid auto-refreshes when files are added or deleted externally (no restart needed)
 - Resizes responsively; closing the window sends Autowall to the tray
 
 ### Viewer

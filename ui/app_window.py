@@ -203,6 +203,7 @@ class WallpaperApp:
         self._render_tok = 0
         self._last_grid_w  = 0
         self._resize_after = None
+        self._poll_sig     = None   # filesystem signature for auto-refresh
 
         root.title("Autowall")
         root.configure(bg=BG)
@@ -219,6 +220,43 @@ class WallpaperApp:
 
         root.after_idle(self.refresh)
         root.after(200, self._check_first_run)
+        root.after(3000, self._poll_library)
+
+    # ── Filesystem polling (auto-refresh library) ─────────────────────────────
+
+    def _lib_sig(self):
+        """Return a tuple that changes whenever the library contents change."""
+        sig = []
+        # Meta file mtime
+        meta_file = getattr(manager, "META", None)
+        if meta_file and os.path.exists(meta_file):
+            try:
+                sig.append(os.path.getmtime(meta_file))
+            except OSError:
+                pass
+        # Folder file lists (sorted names)
+        for folder in (getattr(manager, "INBOX", None), getattr(manager, "FAV", None)):
+            if folder and os.path.isdir(folder):
+                try:
+                    names = tuple(sorted(
+                        f for f in os.listdir(folder)
+                        if f.lower().endswith((".jpg", ".jpeg", ".png"))
+                    ))
+                    sig.append(names)
+                except OSError:
+                    pass
+        return tuple(sig)
+
+    def _poll_library(self):
+        try:
+            sig = self._lib_sig()
+            if sig != self._poll_sig:
+                if self._poll_sig is not None:   # skip the very first snapshot
+                    self.refresh()
+                self._poll_sig = sig
+        except Exception:
+            pass
+        self.root.after(3000, self._poll_library)
 
     # ── Top bar ───────────────────────────────────────────────────────────────
 
@@ -485,14 +523,16 @@ class WallpaperApp:
         recent = list(meta.get("__recent__", []))
 
         if self._tab == "all":
-            recent_set = set(recent)
+            # recent_order: index 0 = most recently set wallpaper
+            recent_order = {h: i for i, h in enumerate(reversed(recent))}
             items = [
                 (h, info) for h, info in meta.items()
                 if isinstance(info, dict) and os.path.exists(info.get("path", ""))
             ]
-            items.sort(key=lambda x: (0 if x[0] in recent_set else 1,
-                                      x[1].get("date", "")), reverse=True)
-            items.sort(key=lambda x: 0 if x[0] in recent_set else 1)
+            # Pass 1: date descending so newer images float up within each group
+            items.sort(key=lambda x: x[1].get("date", ""), reverse=True)
+            # Pass 2: stable sort — recent items first (by recency), rest after
+            items.sort(key=lambda x: recent_order.get(x[0], len(recent_order)))
 
         elif self._tab == "favorites":
             fav_norm = os.path.normcase(manager.FAV)
@@ -502,8 +542,12 @@ class WallpaperApp:
                 and os.path.exists(info.get("path", ""))
                 and os.path.normcase(info.get("path", "")).startswith(fav_norm)
             ]
+            # Newest favorited first, then alphabetically by filename
+            items.sort(key=lambda x: os.path.basename(x[1].get("path", "")))
+            items.sort(key=lambda x: x[1].get("date", ""), reverse=True)
 
         else:  # recent
+            # Most recently set wallpaper first (reversed recent list)
             items = [
                 (h, meta[h]) for h in reversed(recent)
                 if h in meta and isinstance(meta[h], dict)
@@ -616,7 +660,7 @@ class WallpaperApp:
             photo = ImageTk.PhotoImage(pil_img)
             self._photos.append(photo)
             card.set_photo(photo)
-        except tk.TclError:
+        except Exception:
             pass
 
     # ── Fetch ─────────────────────────────────────────────────────────────────
@@ -694,7 +738,7 @@ class WallpaperApp:
             category = info.get("category", "general")
             update_preference(meta, category, +2 if not was_liked else -2)
             manager.save_meta(meta)
-            self.refresh()
+            self.root.after(0, self.refresh)
 
         elif action == "favorite":
             path = info.get("path", "")
@@ -706,7 +750,10 @@ class WallpaperApp:
                 new_path = manager.get_unique_path(manager.INBOX, os.path.basename(path))
                 shutil.move(path, new_path)
                 meta[file_hash].update({"path": new_path, "favorite": False})
-                wallpaper.refresh_current_wallpaper(cfg, file_hash, meta)
+                try:
+                    wallpaper.refresh_current_wallpaper(cfg, file_hash, meta)
+                except Exception:
+                    pass
             else:
                 if not os.path.exists(path):
                     return
@@ -716,26 +763,38 @@ class WallpaperApp:
                     "path": new_path, "favorite": True,
                     "liked": True,    "reviewed": True,
                 })
-                wallpaper.refresh_current_wallpaper(cfg, file_hash, meta)
+                try:
+                    wallpaper.refresh_current_wallpaper(cfg, file_hash, meta)
+                except Exception:
+                    pass
                 update_preference(meta, category, +5)
             manager.save_meta(meta)
-            self.refresh()
+            self.root.after(0, self.refresh)
 
         elif action == "delete":
             path = info.get("path", "")
             cfg = manager.load_config()
-            wallpaper.switch_away_from_current(cfg, file_hash, meta)
+            try:
+                wallpaper.switch_away_from_current(cfg, file_hash, meta)
+            except Exception:
+                pass
             if os.path.exists(path):
                 try:
                     os.remove(path)
                 except OSError:
                     pass
+            cache_path = os.path.join(CACHE_DIR, f"{file_hash}_thumb.jpg")
+            try:
+                if os.path.exists(cache_path):
+                    os.remove(cache_path)
+            except OSError:
+                pass
             manager.remove_from_recent(meta, file_hash)
-            del meta[file_hash]
+            meta.pop(file_hash, None)
             manager.save_meta(meta)
             if self._hero_hash == file_hash:
                 self._hero_hash = None
-            self.refresh()
+            self.root.after(0, self.refresh)
 
     # ── First-run welcome ─────────────────────────────────────────────────────
 
@@ -826,8 +885,26 @@ class WallpaperApp:
         self.root.withdraw()
 
 
+def _assets_path(filename):
+    base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(base, "assets", filename)
+
+
 def run_app(state):
     root = tk.Tk()
+
+    # Set window + taskbar icon from assets/logo.ico (Windows .ico required for iconbitmap)
+    ico = _assets_path("logo.ico")
+    png = _assets_path("logo.png")
+    try:
+        if os.path.exists(ico):
+            root.iconbitmap(ico)
+        elif os.path.exists(png):
+            img = ImageTk.PhotoImage(file=png)
+            root.iconphoto(True, img)
+    except Exception:
+        pass
+
     state["root"] = root
     app = WallpaperApp(root, state)
     state["app"]  = app

@@ -16,28 +16,30 @@ from core import manager, wallpaper, downloader
 
 
 def _create_icon_image():
-    """Generate a 64×64 tray icon with PIL (no file needed)."""
+    """Load the app logo for the tray icon, falling back to a generated image."""
+    base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    for name in ("logo.png", "logo.ico"):
+        path = os.path.join(base, "assets", name)
+        if os.path.exists(path):
+            try:
+                img = Image.open(path).convert("RGBA")
+                img = img.resize((64, 64), Image.LANCZOS)
+                return img
+            except Exception:
+                pass
+
+    # Fallback: generated placeholder
     size = 64
     img  = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
-
-    # Dark background circle
     draw.ellipse([1, 1, 62, 62], fill=(16, 20, 24, 240))
-
-    # Monitor body
     draw.rectangle([9, 13, 55, 41], fill=(22, 32, 44, 255),
                    outline=(109, 207, 151, 255), width=2)
-    # Screen — sky
     draw.rectangle([11, 15, 53, 33], fill=(20, 70, 110, 255))
-    # Screen — ground
     draw.rectangle([11, 33, 53, 39], fill=(55, 120, 70, 255))
-    # Horizon glow
     draw.line([11, 33, 53, 33], fill=(220, 175, 90, 180), width=1)
-
-    # Stand
     draw.rectangle([27, 41, 37, 49], fill=(109, 207, 151, 255))
     draw.rectangle([19, 49, 45, 53], fill=(109, 207, 151, 255))
-
     return img
 
 
